@@ -1,0 +1,49 @@
+apiVersion: kubeadm.k8s.io/v1beta1
+kind: InitConfiguration
+bootstrapTokens:
+- token: "ckbate.k7pmmpzikz6t23m6"
+  description: "kubeadm bootstrap token"
+  ttl: "8760h"
+  usages:
+    - authentication
+    - signing
+nodeRegistration:
+  name: "HOSTNAME"
+  kubeletExtraArgs:
+    cloud-provider: "aws"
+  taints:
+  - key: "kubeadmNode"
+    value: "master"
+    effect: "PreferNoSchedule"
+
+---
+apiVersion: "kubeadm.k8s.io/v1beta1"
+kind: ClusterConfiguration
+controlPlaneEndpoint: "apiserver.k8s.mstakx:6443"
+apiServer:
+  certSANs:
+  - "HOSTNAME"
+  - "apiserver.k8s.mstakx"
+  - "10.96.0.1"
+  extraArgs:
+    client-ca-file: /etc/kubernetes/pki/ca.crt
+    enable-bootstrap-token-auth: "true"
+    cloud-provider: "aws"
+etcd:
+  external:
+    endpoints:
+    - https://etcd.k8s.mstakx:2379
+    caFile: /etc/kubernetes/pki/ca.crt
+    certFile: /etc/kubernetes/pki/apiserver-etcd-client.crt
+    keyFile: /etc/kubernetes/pki/apiserver-etcd-client.key
+controllerManager:
+  extraArgs:
+    cluster-signing-cert-file: /etc/kubernetes/pki/ca.crt
+    cluster-signing-key-file: /etc/kubernetes/pki/ca.key
+    experimental-cluster-signing-duration: "8760h"
+    cloud-provider: "aws"
+clusterName: "cluster-mstakx"
+networking:
+  serviceSubnet: "10.96.0.0/16"
+  podSubnet: "192.168.128.0/17"
+  dnsDomain: "cluster.local"

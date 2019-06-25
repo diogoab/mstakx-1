@@ -1,0 +1,44 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  generation: 10
+  labels:
+    run: mediawiki
+  name: mediawiki
+  namespace: mediawiki
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      run: mediawiki
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        run: mediawiki
+    spec:
+      containers:
+      - command:
+        - /bin/bash
+        - -c
+        - /usr/bin/curl https://releases.wikimedia.org/mediawiki/1.32/mediawiki-1.32.2.tar.gz
+          -o mediawiki-1.32.2.tar.gz && /bin/tar -xzvf mediawiki-1.32.2.tar.gz &&
+          /bin/mv mediawiki-1.32.2/* . && apache2-foreground
+        image: php:apache
+        imagePullPolicy: IfNotPresent
+        name: mediawiki
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30

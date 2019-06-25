@@ -1,0 +1,157 @@
+#cloud-config
+ 
+# import kubernetes repository key
+bootcmd:
+  - apt-get update
+  - apt-get install -y apt-transport-https curl
+  - curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+
+# Kubernetes repository
+apt:
+  sources:
+    kube:
+      source: "deb https://apt.kubernetes.io/ kubernetes-xenial main"
+
+# apt-get update
+apt_update: true
+
+# Packages
+packages:
+  - docker.io
+  - python3-pip
+  - kubectl=1.14.3-00
+  - kubeadm=1.14.3-00
+  - kubelet=1.14.3-00
+
+# Disk Partition and format
+disk_setup:
+   /dev/nvme1n1:
+      table_type: 'mbr'
+      layout:
+        - [100,83]
+      overwrite: false
+fs_setup:
+    - label: etcd-data
+      filesystem: ext4
+      device: /dev/nvme1n1p1
+      overwrite: false
+      cmd: mkfs -t %(filesystem)s -L %(label)s %(device)s
+
+# Mount Disk
+mounts:
+ - [ /dev/nvme1n1p1, /var/lib/etcd, "ext4", "defaults" ]
+
+# Files to services
+write_files:
+  - content: |
+      [Unit]
+      Description=Format
+      ConditionPathExists=/etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+      
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/mkdir -p /etc/kubernetes/pki/etcd /etc/default/kubelet
+      ExecStart=/bin/rm -f /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+      ExecStart=/root/.local/bin/aws s3 cp s3://data-kubernetes/ca/ca.crt /etc/kubernetes/pki/etcd/
+      ExecStart=/root/.local/bin/aws s3 cp s3://data-kubernetes/ca/ca.key /etc/kubernetes/pki/etcd/
+      ExecStart=/root/.local/bin/aws s3 cp s3://data-kubernetes/etcd/20-kubelet-etcd.conf /etc/systemd/system/kubelet.service.d/
+      ExecStart=/root/.local/bin/aws s3 cp s3://data-kubernetes/etcd/kubeadmcfg.yaml /etc/kubernetes/
+    owner: root:root
+    path: /etc/systemd/system/get-kube-conf.service
+    permissions: '0644'
+  - content: |
+      {
+        "exec-opts": ["native.cgroupdriver=systemd"],
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "100m"
+        },
+        "storage-driver": "overlay2"
+      }
+    owner: root:root
+    path: /etc/docker/daemon.json
+    permissions: '0644'
+  - content: |
+      [Unit]
+      Description=Install Etcd Cluster
+      Requires=get-kube-conf.service
+      RequiresMountsFor=/var/lib/etcd
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/kubeadm init phase certs etcd-server --config=/etc/kubernetes/kubeadmcfg.yaml
+      ExecStart=/usr/bin/kubeadm init phase certs etcd-peer --config=/etc/kubernetes/kubeadmcfg.yaml
+      ExecStart=/usr/bin/kubeadm init phase certs etcd-healthcheck-client --config=/etc/kubernetes/kubeadmcfg.yaml
+      ExecStart=/usr/bin/kubeadm init phase certs apiserver-etcd-client --config=/etc/kubernetes/kubeadmcfg.yaml
+      ExecStart=/usr/bin/kubeadm init phase etcd local --config=/etc/kubernetes/kubeadmcfg.yaml
+
+    owner: root:root
+    path: /etc/systemd/system/etcd-cluster-conf.service
+    permissions: '0644'
+  - content: |
+      {
+        "Comment": "Etcd Discovery",
+        "Changes": [
+          {
+            "Action": "CREATE",
+            "ResourceRecordSet": {
+              "Name": "_etcd-server-ssl._tcp.k8s.mstakx",
+              "Type": "SRV",
+              "TTL": 30,
+              "SetIdentifier": "EC2_NAME",
+              "MultiValueAnswer": true,
+              "ResourceRecords": [
+                {
+                  "Value": " 0 0 2380 EC2_INSTANCE"
+                }
+              ]
+            }
+          }
+        ]     
+      }
+    owner: root:root
+    path: /var/run/cloud-init/route-add.json
+    permissions: '0755'
+  - content: |
+      #!/bin/bash
+      # Instance Hostname
+      ec2_instance=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
+      ec2_name=$(hostname -s)
+      sed -i s/EC2_INSTANCE/$${ec2_instance}/g /var/run/cloud-init/route-add.json
+      sed -i s/EC2_NAME/$${ec2_name}/g /var/run/cloud-init/route-add.json
+
+      # Configure FQDN
+      sed -i s/FQDN/$${ec2_instance}/g /etc/kubernetes/kubeadmcfg.yaml
+
+      # Instal AWS Cli 
+      pip3 install awscli --user
+      /root/.local/bin/aws route53 change-resource-record-sets --hosted-zone-id ${zone-id} --change-batch=file:///var/run/cloud-init/route-add.json
+      
+      sleep 30
+    owner: root:root
+    path: /var/lib/cloud/scripts/per-instance/01-dns-register.sh
+    permissions: '0755'
+  - content: |
+      #!/bin/bash
+      # Call get-kube-conf.service
+      systemctl start get-kube-conf.service
+
+      # Call etcd-cluster-conf.service
+      systemctl start etcd-cluster-conf.service
+
+      # Enable kubelet and start
+      systemctl daemon-reload
+      systemctl enable docker
+      systemctl enable kubelet
+      systemctl start docker
+      systemctl start kubelet
+
+      # Wait to get apiserver-etcd
+      sleep 60
+
+      # Copy apiserver-etcd certs
+      /root/.local/bin/aws s3 cp /etc/kubernetes/pki/apiserver-etcd-client.crt s3://data-kubernetes/apiserver/
+      /root/.local/bin/aws s3 cp /etc/kubernetes/pki/apiserver-etcd-client.key s3://data-kubernetes/apiserver/
+    owner: root:root
+    path: /var/lib/cloud/scripts/per-instance/02-execute-conf.sh
+    permissions: '0755'
