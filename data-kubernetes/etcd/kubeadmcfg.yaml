@@ -1,16 +1,16 @@
 apiVersion: "kubeadm.k8s.io/v1beta1"
 kind: ClusterConfiguration
 etcd:
-    local:
-        serverCertSANs:
-        - "k8s.mstakx"
-        - "etcd.k8s.mstakx"
-        - FQDN 
-        peerCertSANs:
-        - "k8s.mstakx"        
-        - "etcd.k8s.mstakx" 
-        - FQDN
-        extraArgs:
-            initial-cluster:
-            initial-cluster-state: new
-            discovery-srv: k8s.mstakx 
+  local:
+    serverCertSANs:
+      - "k8s.mstakx"
+      - "etcd.k8s.mstakx"
+      - "FULL_NAME"
+    peerCertSANs:
+      - "k8s.mstakx"        
+      - "etcd.k8s.mstakx" 
+      - "FULL_NAME"
+    extraArgs:
+      initial-cluster:
+      initial-cluster-state: new
+      discovery-srv: k8s.mstakx 

@@ -50,28 +50,31 @@ The terraform directory have the structure:
 - Nat Gateway created
 - Route tables to Internet Gateway and Nat Gateway
 
+If you do not have this and need create a VPC can be use terraform 00-vpc. Execute the follow commands:
+```
+aws s3api create-bucket --bucket data-terraform
+cd terraform/00-vpc
+terraform apply -auto-approve
+```
 Is necessary edit the file [module/default.tf](terraform/module/default.tf) to configure the VPC id and Route tables. Carefully revised the file and parameters.
 
 Terraform binary is need with version 0.12
 
 The steps are:
 
-01 - Deploy the base configuration
+01 - Create the bucket to terraform
+```
+aws s3api create-bucket --bucket data-terraform
+```
+
+02 - Deploy the base configuration
 ```
 cd terraform/01-base
 terraform apply -auto-approve
 ```
-
-02 - Copy the configurations in data-kubernetes to bucket created
+PS.: A script in 01-base will copy the directory CA. If you want generate your own execute the command before step 02:
 ```
-aws s3 cp --recursive data-kubernetes/ca s3://data-kubernetes/ca/
-aws s3 cp --recursive data-kubernetes/etcd s3://data-kubernetes/etcd/
-aws s3 cp --recursive data-kubernetes/apiserver s3://data-kubernetes/apiserver/
-aws s3 cp --recursive data-kubernetes/worker s3://data-kubernetes/worker/
-```
-
-PS.: The directory already have a CA file. If you want generate your own execute the command:
-```
+cd data-kubernetes/ca
 openssl genrsa -out data-kubernetes/ca/ca.key 4096
 openssl req -x509 -new -nodes -key data-kubernetes/ca/ca.key -subj "/CN=kubernetes" -days 365 -reqexts v3_req -extensions v3_ca -out data-kubernetes/ca/ca.crt
 ```
@@ -88,30 +91,33 @@ cd terraform/03-apiserver
 terraform apply -autoapprove
 ```
 
-05 - Apply the RBACs to permit kubelet bootstrap
-In this step a access to cluster is need. The simple form is access a Apiserver node. Copy the file /etc/kubernetes/admin-confg.yaml to ~/.kube/config as root user:
+05 - Deploy the Workers
+```
+cd terraform/04-worker
+terraform apply -autoapprove
+```
+
+05 - The next steps is access to cluster. The simple form is access a Apiserver node and copy the file /etc/kubernetes/admin-confg.yaml to ~/.kube/config as root user:
 ```
 mkdir -p ~/.kube/
 cp /etc/kubernetes/admin.conf ~/.kube/admin.conf
 kubectl create -f base-kubernetes/00-bootstrap-kubelet
 ```
 
-06 - Deploy the Workers
-```
-cd terraform/04-worker
-terraform apply -autoapprove
-```
-
 06 - Apply the plugins to cluster
 ```
 cd base-kubernetes
+kubectl create -f 01-weave/* 
 kubectl create -f 02-weave/*  
 kubectl create -f 03-ingress/*
 kubectl create -f 04-storage-class/*
 kubectl create -f 05-external-dns/*
 ```
 
-PS.: To deploy External DNS we have to create a Zone and specify the zone-id in external-dns.yaml
+PS.: To deploy External DNS we have to create a Zone and specify the zone-id in external-dns.yaml. To verify the zone is execute the command:
+```
+aws route53 list-hosted-zones-by-name --output json --dns-name "external.mstakx" | jq -r '.HostedZones[0].Id'
+```
 
 Now the cluster is functional and is prepare to received applications.
 
@@ -145,9 +151,10 @@ kubectl expose deploy mediawiki --port 80
 - [Helm](https://helm.sh/docs/using_helm/#installing-helm) installed with a version higher than 2.10
 
 The step are:
-01 - Access the directory and export the PATH variable with istioctl binary
+01 - Download Istio, access the directory and export the PATH variable with istioctl binary
 ```
-cd 06-istio/istio-1.2.0
+curl -L https://git.io/getLatestIstio | ISTIO_VERSION=1.2.0 sh -
+cd istio-1.2.0
 export PATH=$PWD/bin:$PATH
 ```
 

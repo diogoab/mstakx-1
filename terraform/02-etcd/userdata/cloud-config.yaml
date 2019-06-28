@@ -46,16 +46,15 @@ write_files:
   - content: |
       [Unit]
       Description=Format
-      ConditionPathExists=/etc/systemd/system/kubelet.service.d/10-kubeadm.conf
       
       [Service]
       Type=oneshot
       ExecStart=/bin/mkdir -p /etc/kubernetes/pki/etcd /etc/default/kubelet
-      ExecStart=/bin/rm -f /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+      ExecStart=/bin/rm -f /etc/systemd/system/kubelet.service.d/*
       ExecStart=/root/.local/bin/aws s3 cp s3://data-kubernetes/ca/ca.crt /etc/kubernetes/pki/etcd/
       ExecStart=/root/.local/bin/aws s3 cp s3://data-kubernetes/ca/ca.key /etc/kubernetes/pki/etcd/
       ExecStart=/root/.local/bin/aws s3 cp s3://data-kubernetes/etcd/20-kubelet-etcd.conf /etc/systemd/system/kubelet.service.d/
-      ExecStart=/root/.local/bin/aws s3 cp s3://data-kubernetes/etcd/kubeadmcfg.yaml /etc/kubernetes/
+      ExecStart=/root/.local/bin/aws s3 cp s3://data-kubernetes/etcd/kubeadmcfg.yaml /etc/kubernetes/kubeadmcfg.yaml-template
     owner: root:root
     path: /etc/systemd/system/get-kube-conf.service
     permissions: '0644'
@@ -114,17 +113,23 @@ write_files:
     permissions: '0755'
   - content: |
       #!/bin/bash
+
+      # Instal AWS Cli 
+      pip3 install awscli --user
+
       # Instance Hostname
       ec2_instance=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
       ec2_name=$(hostname -s)
       sed -i s/EC2_INSTANCE/$${ec2_instance}/g /var/run/cloud-init/route-add.json
       sed -i s/EC2_NAME/$${ec2_name}/g /var/run/cloud-init/route-add.json
 
-      # Configure FQDN
-      sed -i s/FQDN/$${ec2_instance}/g /etc/kubernetes/kubeadmcfg.yaml
+      # Call get-kube-conf.service
+      systemctl start get-kube-conf.service
 
-      # Instal AWS Cli 
-      pip3 install awscli --user
+      # Configure FQDN
+      sed s/FULL_NAME/$${ec2_instance}/g /etc/kubernetes/kubeadmcfg.yaml-template > /etc/kubernetes/kubeadmcfg.yaml
+
+      # Create DNS entry
       /root/.local/bin/aws route53 change-resource-record-sets --hosted-zone-id ${zone-id} --change-batch=file:///var/run/cloud-init/route-add.json
       
       sleep 30
@@ -133,9 +138,6 @@ write_files:
     permissions: '0755'
   - content: |
       #!/bin/bash
-      # Call get-kube-conf.service
-      systemctl start get-kube-conf.service
-
       # Call etcd-cluster-conf.service
       systemctl start etcd-cluster-conf.service
 

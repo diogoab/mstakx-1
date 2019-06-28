@@ -1,3 +1,9 @@
+data "aws_security_group" "all-from-vpc" {
+  tags = {
+    Name = "allow-from-vpc"
+  }
+}
+
 resource "aws_launch_configuration" "worker-node" {
   iam_instance_profile = aws_iam_instance_profile.kube-worker-profile.name
   image_id             = data.aws_ami.ubuntu.id
@@ -6,7 +12,7 @@ resource "aws_launch_configuration" "worker-node" {
   ebs_optimized        = true
   key_name             = "kube-dns"
 
-  security_groups = [aws_security_group.worker.id]
+  security_groups = [aws_security_group.worker.id, data.aws_security_group.all-from-vpc.id]
 
   ebs_block_device {
       device_name = "sdf"

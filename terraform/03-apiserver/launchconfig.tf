@@ -1,3 +1,9 @@
+data "aws_security_group" "all-from-vpc" {
+  tags = {
+    Name = "allow-from-vpc"
+  }
+}
+
 resource "aws_launch_configuration" "apiserver-node" {
   iam_instance_profile = aws_iam_instance_profile.kube-apiserver-profile.name
   image_id             = data.aws_ami.ubuntu.id
@@ -6,7 +12,7 @@ resource "aws_launch_configuration" "apiserver-node" {
   ebs_optimized        = true
   key_name             = "kube-dns"
 
-  security_groups = [aws_security_group.apiserver.id]
+  security_groups = [aws_security_group.apiserver.id, data.aws_security_group.all-from-vpc.id]
 
   ebs_block_device {
       device_name = "sdf"
