@@ -44,6 +44,4 @@ controllerManager:
     cloud-provider: "aws"
 clusterName: "cluster-mstakx"
 networking:
-  serviceSubnet: "10.96.0.0/16"
-  podSubnet: "192.168.128.0/17"
   dnsDomain: "cluster.local"

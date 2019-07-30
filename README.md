@@ -54,9 +54,10 @@ If you do not have this and need create a VPC can be use terraform 00-vpc. Execu
 ```
 aws s3api create-bucket --bucket data-terraform
 cd terraform/00-vpc
+terraform init
 terraform apply -auto-approve
 ```
-Is necessary edit the file [module/default.tf](terraform/module/default.tf) to configure the VPC id and Route tables. Carefully revised the file and parameters.
+Is necessary edit the file [module/default.tf](terraform/module/default.tf) to configure the VPC id and Route tables. Carefully revised the file and parameters. Is a output in 00-vpc show the nat-route-table-id, route-table-id and vpc-id.
 
 Terraform binary is need with version 0.12
 
@@ -70,48 +71,64 @@ aws s3api create-bucket --bucket data-terraform
 02 - Deploy the base configuration
 ```
 cd terraform/01-base
+terraform init
 terraform apply -auto-approve
 ```
-PS.: A script in 01-base will copy the directory CA. If you want generate your own execute the command before step 02:
+PS1.: A script in 01-base will copy the directory CA. If you want generate your own execute the command before step 02:
 ```
 cd data-kubernetes/ca
 openssl genrsa -out data-kubernetes/ca/ca.key 4096
 openssl req -x509 -new -nodes -key data-kubernetes/ca/ca.key -subj "/CN=kubernetes" -days 365 -reqexts v3_req -extensions v3_ca -out data-kubernetes/ca/ca.crt
 ```
+PS2.: Is a output show the public IP of bastion instance. In step 06 we use this instance to access the cluster, finish the installation and configure other modules.
 
 03 - Deploy the Etcd cluster
 ```
 cd terraform/02-etcd
+terraform init
 terraform apply -auto-approve
 ```
+PS1.: The etcd create the DNS entry to discovery automatically. If you need destroy etcd resource remeber of erase this entries.
 
 04 - Deploy Kubernetes Cluster
 ```
 cd terraform/03-apiserver
+terraform init
 terraform apply -autoapprove
 ```
 
 05 - Deploy the Workers
 ```
 cd terraform/04-worker
+terraform init
 terraform apply -autoapprove
 ```
 
-05 - The next steps is access to cluster. The simple form is access a Apiserver node and copy the file /etc/kubernetes/admin-confg.yaml to ~/.kube/config as root user:
+06 - The next steps is access to cluster using kubectl binary. Is need access the bastion server and copy the file s3://data-kubernetes/bastion/config to ~/.kube/config:
 ```
+export KEY="key to access the server"
+export BASTION="Bastion instance public IP"
+ssh -i ${KEY} ubuntu@${BASTION}
+
+sudo apt-get update && sudo apt-get install -y apt-transport-https curl
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+echo 'deb https://apt.kubernetes.io/ kubernetes-xenial main' > /tmp/kubernetes.list
+sudo mv /tmp/kubernetes.list /etc/apt/sources.list.d/kubernetes.list
+sudo apt-get update
+sudo apt-get install -y kubectl git awscli
 mkdir -p ~/.kube/
-cp /etc/kubernetes/admin.conf ~/.kube/admin.conf
-kubectl create -f base-kubernetes/00-bootstrap-kubelet
+aws s3 cp s3://data-kubernetes/bastion/config ~/.kube/config
 ```
 
-06 - Apply the plugins to cluster
+07 - Apply the plugins to cluster. Is necessary clone the project inside the bastion to deploy this resources:
 ```
-cd base-kubernetes
-kubectl create -f 01-weave/* 
-kubectl create -f 02-weave/*  
-kubectl create -f 03-ingress/*
-kubectl create -f 04-storage-class/*
-kubectl create -f 05-external-dns/*
+git clone https://github.com/jbaojunior/mstakx
+cd mstakx
+kubectl create -f base-kubernetes/00-bootstrap-kubelet
+kubectl create -f base-kubernetes/02-weave/*  
+kubectl create -f base-kubernetes/03-ingress/*
+kubectl create -f base-kubernetes/04-storage-class/*
+kubectl create -f base-kubernetes/05-external-dns/*
 ```
 
 PS.: To deploy External DNS we have to create a Zone and specify the zone-id in external-dns.yaml. To verify the zone is execute the command:
@@ -174,6 +191,7 @@ kubectl get crds | grep 'istio.io\|certmanager.k8s.io' | wc -l
 ```
 
 ### **Kiali** ###
+** Miss enable the jaeger =S
 To deploy Kiali:
 01 - Create a secret
 ```

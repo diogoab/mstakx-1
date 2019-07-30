@@ -57,6 +57,11 @@ write_files:
       # Instal AWS Cli 
       pip3 install awscli --user
 
+      # Weave requires
+      sysctl net.bridge.bridge-nf-call-iptables=1
+      echo "net.bridge.bridge-nf-call-iptables = 1" >> /etc/sysctl.conf
+      sysctl -p
+
       # Call get-kube-conf.service
       systemctl start get-kube-conf.service
 

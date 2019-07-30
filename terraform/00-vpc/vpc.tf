@@ -70,6 +70,18 @@ resource "aws_route_table" "nat" {
 
   tags = {
     Name = "nat-route-table"
+    "kubernetes.io/cluster/cluster-mstakx" = true
   }
 }
 
+output "vpc-id" {
+  value = ["${aws_vpc.k8s-mstakx.id}"]
+}
+
+output "route-table-id" {
+  value = ["${aws_route_table.route.id}"]
+}
+
+output "nat-route-table-id" {
+  value = ["${aws_route_table.nat.id}"]
+}

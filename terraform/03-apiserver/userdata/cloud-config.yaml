@@ -76,6 +76,11 @@ write_files:
       # Call get-kube-conf.service
       systemctl start get-kube-conf.service
 
+      # Weave requires
+      sysctl net.bridge.bridge-nf-call-iptables=1
+      echo "net.bridge.bridge-nf-call-iptables = 1" >> /etc/sysctl.conf
+      sysctl -p
+
       # Configure FQDN
       EC2=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
       sed s/HOSTNAME/${EC2}/g /etc/kubernetes/kubeadmcfg.yaml-template > /etc/kubernetes/kubeadmcfg.yaml

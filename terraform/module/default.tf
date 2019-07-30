@@ -1,13 +1,13 @@
 output vpc-id {
-  value = "vpc-a49a48de"
+  value = "vpc-03d616c66574b84ff"
 }
 
 output "nat-route-table-id"  {
-  value = "rtb-0a36de372d9855c8d"
+  value = "rtb-0933497c8b7bf5976"
 }
 
 output "route-table-id"  {
-  value = "rtb-25fda35a"
+  value = "rtb-0a8a9df8c5d5556d1"
 }
 
 output "cidr-private-1" {
