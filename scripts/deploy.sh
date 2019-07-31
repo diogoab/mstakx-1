@@ -32,8 +32,8 @@ echo '### Etcd'
 cd ${WORKDIR}/terraform/02-etcd
 terraform init
 terraform apply -auto-approve
-echo -e "sleeping 180...\n"
-sleep 180
+echo -e "sleeping 300...\n"
+sleep 300
 
 # Deploy Api Server
 echo '### APIServer'
