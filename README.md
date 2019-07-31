@@ -44,24 +44,67 @@ The terraform directory have the structure:
 
 
 ## HOW TO DEPLOY ##
+### AUTOMATIC METHOD ###
 ### Requirements ###
-- VPC created with CIDR 172.31.0.0/16
-- Internet Gateway created
-- Nat Gateway created
-- Route tables to Internet Gateway and Nat Gateway
+- docker 
+ 
+A docker image can be build to automatizate deploy process. Before execute the build two steps should be execute:
+ 
+01 - Copy ssh key to access the bastion instance need to be copy to directory "key" inside project whit name ssh-key:
+```
+cp ~/keys/kube-dns.pem keys/ssh-key
+```
 
-If you do not have this and need create a VPC can be use terraform 00-vpc. Execute the follow commands:
+02 - Export the absolute path (not relative "~") to aws configs. Is necessary do a bind volume from "${HOME}/.aws" configuration. If you wish, can use throught variables:
+```
+export AWS_PATH='/home/user/.aws'
+```
+or 
+``` 
+export AWS_ACCESS_ID
+export AWS_ACCESS_KEY_ID
+export AWS_DEFAULT_REGION
+```
+
+To build the image:
+```
+build-image.sh
+```
+
+To deploy cluster:
+```
+./deploy-cluster.sh
+```
+
+To destroy cluster:
+```
+./undeploy-cluster.sh
+```
+
+### MANUAL METHOD ###
+### Requirements ###
+- terraformi (0.12), awscli, ssh tools, git and jq binary
+
+If you do not have a VPC, Internet Gateway/Nat Gateway and route tables can be use terraform 00-vpc. Execute the follow commands:
 ```
 aws s3api create-bucket --bucket data-terraform
-cd terraform/00-vpc
+git clone https://github.com/jbaojunior/mstakx
+cd mstakx
+export WORKDIR=$(pwd)
+
+cd ${WORKDIR}/terraform/00-vpc
 terraform init
 terraform apply -auto-approve
+export NAT_RT_ID=$(terraform output -json nat-route-table-id | jq -r .[])
+export RT_ID=$(terraform output -json route-table-id | jq -r .[])
+export VPC_ID=$(terraform output -json vpc-id | jq -r .[])
+
+cd ${WORKDIR}/terraform/module
+sed -e s/NAT_RT_ID/${NAT_RT_ID}/g  -e s/RT_ID/${RT_ID}/g -e s/VPC_ID/${VPC_ID}/g default.tf-template > default.tf
 ```
-Is necessary edit the file [module/default.tf](terraform/module/default.tf) to configure the VPC id and Route tables. Carefully revised the file and parameters. Is a output in 00-vpc show the nat-route-table-id, route-table-id and vpc-id.
+If you have is necessary edit the file [module/default.tf](terraform/module/default.tf) to configure the VPC id and Route tables. Carefully revised the file and parameters.
 
-Terraform binary is need with version 0.12
-
-The steps are:
+The following steps are:
 
 01 - Create the bucket to terraform
 ```
@@ -70,13 +113,14 @@ aws s3api create-bucket --bucket data-terraform
 
 02 - Deploy the base configuration
 ```
-cd terraform/01-base
+cd ${WORKDIR}/terraform/01-base
 terraform init
 terraform apply -auto-approve
+export BASTION_IP=$(terraform output -json bastion_ip | jq -r .[][])
 ```
 PS1.: A script in 01-base will copy the directory CA. If you want generate your own execute the command before step 02:
 ```
-cd data-kubernetes/ca
+cd ${WORKDIR}/data-kubernetes/ca
 openssl genrsa -out data-kubernetes/ca/ca.key 4096
 openssl req -x509 -new -nodes -key data-kubernetes/ca/ca.key -subj "/CN=kubernetes" -days 365 -reqexts v3_req -extensions v3_ca -out data-kubernetes/ca/ca.crt
 ```
@@ -84,7 +128,7 @@ PS2.: Is a output show the public IP of bastion instance. In step 06 we use this
 
 03 - Deploy the Etcd cluster
 ```
-cd terraform/02-etcd
+cd ${WORKDIR}/terraform/02-etcd
 terraform init
 terraform apply -auto-approve
 ```
@@ -92,14 +136,14 @@ PS1.: The etcd create the DNS entry to discovery automatically. If you need dest
 
 04 - Deploy Kubernetes Cluster
 ```
-cd terraform/03-apiserver
+cd ${WORKDIR}/terraform/03-apiserver
 terraform init
 terraform apply -autoapprove
 ```
 
 05 - Deploy the Workers
 ```
-cd terraform/04-worker
+cd ${WORKDIR}/terraform/04-worker
 terraform init
 terraform apply -autoapprove
 ```
@@ -107,28 +151,25 @@ terraform apply -autoapprove
 06 - The next steps is access to cluster using kubectl binary. Is need access the bastion server and copy the file s3://data-kubernetes/bastion/config to ~/.kube/config:
 ```
 export KEY="key to access the server"
-export BASTION="Bastion instance public IP"
-ssh -i ${KEY} ubuntu@${BASTION}
-
-sudo apt-get update && sudo apt-get install -y apt-transport-https curl
-curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
-echo 'deb https://apt.kubernetes.io/ kubernetes-xenial main' > /tmp/kubernetes.list
-sudo mv /tmp/kubernetes.list /etc/apt/sources.list.d/kubernetes.list
-sudo apt-get update
-sudo apt-get install -y kubectl git awscli
-mkdir -p ~/.kube/
-aws s3 cp s3://data-kubernetes/bastion/config ~/.kube/config
+scp -i ${KEY} -r ${WORKDIR}/base-kubernetes ubuntu@${BASTION_IP}:~/
+ssh -i ${KEY} ubuntu@${BASTION_IP} "sudo apt-get update && \
+    sudo apt-get install -y apt-transport-https curl && \
+    curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add - && \
+    echo 'deb https://apt.kubernetes.io/ kubernetes-xenial main' > /tmp/kubernetes.list && \
+    sudo mv /tmp/kubernetes.list /etc/apt/sources.list.d/kubernetes.list && \
+    sudo apt-get update && \
+    sudo apt-get install -y kubectl git awscli && \
+    mkdir -p ~/.kube/ && \
+    aws s3 cp s3://data-kubernetes/bastion/config ~/.kube/config"
 ```
 
 07 - Apply the plugins to cluster. Is necessary clone the project inside the bastion to deploy this resources:
 ```
-git clone https://github.com/jbaojunior/mstakx
-cd mstakx
-kubectl create -f base-kubernetes/00-bootstrap-kubelet
-kubectl create -f base-kubernetes/02-weave/*  
-kubectl create -f base-kubernetes/03-ingress/*
-kubectl create -f base-kubernetes/04-storage-class/*
-kubectl create -f base-kubernetes/05-external-dns/*
+ssh -i ${KEY} ubuntu@${BASTION_IP} "kubectl create -f base-kubernetes/00-bootstrap-kubelet && \
+  kubectl create -f base-kubernetes/02-weave && \
+  kubectl create -f base-kubernetes/03-ingress && \
+  kubectl create -f base-kubernetes/04-storage-class && \
+  kubectl create -f base-kubernetes/05-external-dns
 ```
 
 PS.: To deploy External DNS we have to create a Zone and specify the zone-id in external-dns.yaml. To verify the zone is execute the command:
